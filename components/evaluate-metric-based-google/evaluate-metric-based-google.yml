@@ -1,0 +1,88 @@
+# ModelOps-Templates/components/evaluate-metric-based-google/evaluate-metric-based-google.yml
+# ADO Job template for Computation-Based Evaluation (exact_match, rouge_l, bleu, tool_call_quality)
+
+parameters:
+  - name: jobName
+    type: string
+    default: 'EvaluateMetricBasedJob'
+  - name: projectId
+    type: string
+  - name: gcpRegion
+    type: string
+    default: 'us-central1'
+  - name: agentId
+    type: string
+  - name: datasetPath
+    type: string
+  - name: traceBucketName
+    type: string
+  - name: metrics
+    type: string
+    default: 'exact_match,rouge_l'
+  - name: scriptPath
+    type: string
+    default: '$(Build.SourcesDirectory)/scripts/evaluate_metric_based.py'
+  - name: allowMock
+    type: boolean
+    default: false
+  - name: wifProjectNumber
+    type: string
+  - name: wifPool
+    type: string
+  - name: wifProvider
+    type: string
+  - name: serviceAccount
+    type: string
+
+jobs:
+  - job: ${{ parameters.jobName }}
+    displayName: 'Evaluate Metric-Based (Computation) Performance'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download Python .venv Artifact'
+        inputs:
+          buildType: 'current'
+          artifactName: 'python-venv'
+          targetPath: '$(Build.SourcesDirectory)/.venv'
+
+      - task: Bash@3
+        displayName: 'Fix ADO Executable Permissions (chmod)'
+        inputs:
+          targetType: 'inline'
+          script: |
+            set -e
+            chmod +x $(Build.SourcesDirectory)/.venv/bin/python* || true
+            chmod +x $(Build.SourcesDirectory)/.venv/bin/pip* || true
+
+      - template: setup-wif-template.yml
+        parameters:
+          projectId: ${{ parameters.projectId }}
+          wifProjectNumber: ${{ parameters.wifProjectNumber }}
+          wifPool: ${{ parameters.wifPool }}
+          wifProvider: ${{ parameters.wifProvider }}
+          serviceAccount: ${{ parameters.serviceAccount }}
+
+      - task: Bash@3
+        displayName: 'Execute Computation-Based Eval Script'
+        inputs:
+          targetType: 'inline'
+          script: |
+            set -e
+            source $(Build.SourcesDirectory)/.venv/bin/activate
+            
+            GCS_DEST_URI="gs://${{ parameters.traceBucketName }}/eval_results/metric_based/$(Build.BuildId)/"
+            MOCK_ARG=""
+            if [ "${{ parameters.allowMock }}" == "true" ]; then
+              MOCK_ARG="--allow_mock"
+            fi
+            
+            python3 ${{ parameters.scriptPath }} \
+              --project_id "${{ parameters.projectId }}" \
+              --location "${{ parameters.gcpRegion }}" \
+              --agent_id "${{ parameters.agentId }}" \
+              --dataset_path "${{ parameters.datasetPath }}" \
+              --gcs_dest "$GCS_DEST_URI" \
+              --metrics "${{ parameters.metrics }}" \
+              $MOCK_ARG
