@@ -1,0 +1,17 @@
+# ModelOps-Templates/pipelines/conversational-agent/conversational-agent.yml
+# Top-level pipeline template orchestrating stages for agent evaluation
+
+parameters:
+  - name: projectId
+    type: string
+  - name: gcpRegion
+    type: string
+    default: 'us-central1'
+
+stages:
+  - stage: BuildTemplateStage
+    displayName: 'Build Environment Stage'
+    jobs:
+      - template: ../../components/evaluate-metric-based-google/build_python_environment.yml
+        parameters:
+          jobName: 'BuildEnvJob'
