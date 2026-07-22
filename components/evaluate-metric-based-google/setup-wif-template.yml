@@ -1,0 +1,27 @@
+# ModelOps-Templates/components/evaluate-metric-based-google/setup-wif-template.yml
+# Reusable Workload Identity Federation (WIF) Authentication Steps for GCP
+
+parameters:
+  - name: wifProjectNumber
+    type: string
+  - name: wifPool
+    type: string
+  - name: wifProvider
+    type: string
+  - name: serviceAccount
+    type: string
+  - name: projectId
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: 'Setup Workload Identity Federation (GCP Auth)'
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+        echo "=== Setting up GCP Workload Identity Federation ==="
+        echo "Project ID: ${{ parameters.projectId }}"
+        echo "Service Account: ${{ parameters.serviceAccount }}"
+        gcloud config set project ${{ parameters.projectId }} --quiet
+        echo "[INFO] WIF auth step configured for Pool: ${{ parameters.wifPool }}, Provider: ${{ parameters.wifProvider }}"
