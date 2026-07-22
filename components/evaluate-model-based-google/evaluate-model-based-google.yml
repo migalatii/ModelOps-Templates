@@ -1,0 +1,105 @@
+# ModelOps-Templates/components/evaluate-model-based-google/evaluate-model-based-google.yml
+# ADO Job template for Model-Based Evaluation (safety, groundedness, fluency, coherence)
+
+parameters:
+  - name: jobName
+    type: string
+    default: 'EvaluateModelBasedJob'
+  - name: projectId
+    type: string
+  - name: gcpRegion
+    type: string
+    default: 'us-central1'
+  - name: agentId
+    type: string
+  - name: datasetPath
+    type: string
+  - name: traceBucketName
+    type: string
+  - name: metrics
+    type: string
+    default: 'groundedness,safety,fluency,coherence'
+  - name: safetyThreshold
+    type: float
+    default: 0.95
+  - name: scriptPath
+    type: string
+    default: '$(Build.SourcesDirectory)/scripts/evaluate_model_based.py'
+  - name: allowMock
+    type: boolean
+    default: false
+  - name: wifProjectNumber
+    type: string
+  - name: wifPool
+    type: string
+  - name: wifProvider
+    type: string
+  - name: serviceAccount
+    type: string
+
+jobs:
+  - job: ${{ parameters.jobName }}
+    displayName: 'Evaluate Model-Based (Quality & Safety) Performance'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download Python .venv Artifact'
+        inputs:
+          buildType: 'current'
+          artifactName: 'python-venv'
+          targetPath: '$(Build.SourcesDirectory)/.venv'
+
+      - task: Bash@3
+        displayName: 'Fix ADO Executable Permissions (chmod)'
+        inputs:
+          targetType: 'inline'
+          script: |
+            set -e
+            chmod +x $(Build.SourcesDirectory)/.venv/bin/python* || true
+            chmod +x $(Build.SourcesDirectory)/.venv/bin/pip* || true
+
+      - template: ../evaluate-metric-based-google/setup-wif-template.yml
+        parameters:
+          projectId: ${{ parameters.projectId }}
+          wifProjectNumber: ${{ parameters.wifProjectNumber }}
+          wifPool: ${{ parameters.wifPool }}
+          wifProvider: ${{ parameters.wifProvider }}
+          serviceAccount: ${{ parameters.serviceAccount }}
+
+      - task: Bash@3
+        displayName: 'Execute Model-Based Eval Script'
+        inputs:
+          targetType: 'inline'
+          script: |
+            set -e
+            source $(Build.SourcesDirectory)/.venv/bin/activate
+            
+            GCS_DEST_URI="gs://${{ parameters.traceBucketName }}/eval_results/model_based/$(Build.BuildId)/"
+            MOCK_ARG=""
+            if [ "${{ parameters.allowMock }}" == "true" ]; then
+              MOCK_ARG="--allow_mock"
+            fi
+            
+            python3 ${{ parameters.scriptPath }} \
+              --project_id "${{ parameters.projectId }}" \
+              --location "${{ parameters.gcpRegion }}" \
+              --agent_id "${{ parameters.agentId }}" \
+              --dataset_path "${{ parameters.datasetPath }}" \
+              --gcs_dest "$GCS_DEST_URI" \
+              --metrics "${{ parameters.metrics }}" \
+              --safety_threshold ${{ parameters.safetyThreshold }} \
+              $MOCK_ARG
+
+  - job: HoldOnError
+    displayName: 'Manual Validation Gate on Quality Warning/Failure'
+    dependsOn: ${{ parameters.jobName }}
+    condition: succeededWithIssues()
+    pool: server
+    steps:
+      - task: ManualValidation@0
+        displayName: 'Pause Pipeline for Review'
+        inputs:
+          notifyUsers: ''
+          instructions: 'Model-based evaluation completed with issues. Review GCS report before approving pipeline.'
+          onTimeout: 'reject'
