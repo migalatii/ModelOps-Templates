@@ -1,0 +1,51 @@
+# ModelOps-Templates/components/evaluate-metric-based-google/build_python_environment.yml
+# ADO Job template to build and publish the Python virtual environment (.venv)
+
+parameters:
+  - name: jobName
+    type: string
+    default: 'BuildEnvJob'
+  - name: pythonVersion
+    type: string
+    default: '3.11'
+  - name: requirementsPath
+    type: string
+    default: '$(Build.SourcesDirectory)/requirements.txt'
+
+jobs:
+  - job: ${{ parameters.jobName }}
+    displayName: 'Build Python Environment (.venv)'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - task: UsePythonVersion@0
+        displayName: 'Use Python ${{ parameters.pythonVersion }}'
+        inputs:
+          versionSpec: '${{ parameters.pythonVersion }}'
+          addToPath: true
+
+      - task: Bash@3
+        displayName: 'Create Virtualenv & Install Dependencies'
+        inputs:
+          targetType: 'inline'
+          script: |
+            set -e
+            echo "Creating python virtualenv at $(Build.SourcesDirectory)/.venv"
+            python3 -m venv $(Build.SourcesDirectory)/.venv
+            source $(Build.SourcesDirectory)/.venv/bin/activate
+            pip install --upgrade pip setuptools wheel
+            
+            if [ -f "${{ parameters.requirementsPath }}" ]; then
+              echo "Installing dependencies from ${{ parameters.requirementsPath }}"
+              pip install -r ${{ parameters.requirementsPath }}
+            else
+              echo "Installing default dependencies"
+              pip install "google-cloud-aiplatform[evaluation,reasoningengine,langchain]>=1.60.0" google-cloud-storage pandas cloudpickle rouge-score nltk
+            fi
+
+      - task: PublishPipelineArtifact@1
+        displayName: 'Publish Python .venv Artifact'
+        inputs:
+          targetPath: '$(Build.SourcesDirectory)/.venv'
+          artifactName: 'python-venv'
+          publishLocation: 'pipeline'
